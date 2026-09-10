@@ -62,10 +62,15 @@ INDEX_HTML = """
                 <input type="text" name="target_url" placeholder="http://example.com/login">
                 <label>Check Items</label>
                 <select name="scan_type">
-                    <option value="all">전체 (SQLi, XSS, Auth Bypass 등)</option>
-                    <option value="sqli">SQL Injection</option>
-                    <option value="xss">Cross-Site Scripting (XSS)</option>
-                    <option value="upload">Unrestricted File Upload</option>
+                  <option value="all">전체 점검 (모든 항목)</option>
+                  <option value="sqli">SQL Injection</option>
+                  <option value="xss">Cross-Site Scripting (XSS)</option>
+                  <option value="cmdi">Command Injection</option>
+                  <option value="traversal">Directory Traversal</option>
+                  <option value="auth_bypass">인증/권한 우회 (Auth Bypass)</option>
+                  <option value="idor">IDOR (취약한 객체 참조)</option>
+                  <option value="csrf">CSRF</option>
+                  <option value="upload">Unrestricted File Upload</option>
                 </select>
             </form>
             <button onclick="runScan('/api/scan/web', 'webForm', 'webResult')">웹 취약점 진단 실행</button>
@@ -126,39 +131,67 @@ def index():
 # ==========================================
 # API 1. 웹 애플리케이션 취약점 모듈
 # ==========================================
+# ==========================================
+# API 1. 웹 애플리케이션 취약점 모듈 (확장판)
+# ==========================================
 @app.route("/api/scan/web", methods=["POST"])
 def scan_web():
     data = request.json or {}
     target_url = data.get("target_url", "")
-
-    results = {
-        "target": target_url,
-        "vulnerabilities": [],
-        "details": {"sqli": "N/A", "xss": "N/A", "csrf": "N/A", "upload": "N/A"},
-    }
+    scan_type = data.get("scan_type", "all")
 
     if not target_url:
         return jsonify({"error": "Target URL이 입력되지 않았습니다."}), 400
 
-    # 1. SQL Injection 검사 모사
-    sqli_payloads = ["' OR '1'='1", "'; DROP TABLE users--"]
-    results["details"][
-        "sqli"
-    ] = "파라미터 입력 검증 미비 - SQLi 가능성 감지 (취약)"
+    results = {
+        "target": target_url,
+        "vulnerabilities": [],
+        "details": {}
+    }
 
-    # 2. XSS 검사 모사
-    xss_payloads = "<script>alert(1)</script>"
-    results["details"]["xss"] = "Reflected XSS 취약점 존재 (HTML Escape 미적용)"
+    # 점검 항목별 진단 로직 (개념 모사 및 시뮬레이션)
+    
+    # 1. SQL Injection (SQLi)
+    if scan_type in ["all", "sqli"]:
+        results["details"]["SQLi"] = "파라미터 입력 검증 미비 - SQL Injection 가능성 감지 (취약)"
+        results["vulnerabilities"].append("SQL Injection")
 
-    # 3. CSRF 검사
-    results["details"]["csrf"] = "Anti-CSRF 토큰 누락 확인"
+    # 2. Cross-Site Scripting (XSS)
+    if scan_type in ["all", "xss"]:
+        results["details"]["XSS"] = "Reflected/Stored XSS 취약점 존재 (HTML Escape 미적용)"
+        results["vulnerabilities"].append("XSS")
 
-    # 4. 파일 업로드 점검
-    results["details"]["upload"] = "확장자 검증 부재 (.php, .jsp 업로드 가능)"
+    # 3. Command Injection
+    if scan_type in ["all", "cmdi"]:
+        results["details"]["Command Injection"] = "시스템 명령어 실행 파라미터 필터링 부재 (예: ; ls -al, | whoami)"
+        results["vulnerabilities"].append("Command Injection")
 
-    results["vulnerabilities"] = ["SQLi", "XSS", "CSRF", "Unrestricted Upload"]
+    # 4. Directory Traversal (경로 추적)
+    if scan_type in ["all", "traversal"]:
+        results["details"]["Directory Traversal"] = "상위 디렉터리 접근 필터링 미비 (예: ../../../etc/passwd 접근 가능)"
+        results["vulnerabilities"].append("Directory Traversal")
+
+    # 5. 인증/권한 우회 (Authentication / Authorization Bypass)
+    if scan_type in ["all", "auth_bypass"]:
+        results["details"]["Auth Bypass"] = "세션/쿠키 검증 로직 우회 가능성 존재 (관리자 페이지 직접 접근 가능)"
+        results["vulnerabilities"].append("Auth Bypass")
+
+    # 6. IDOR (Insecure Direct Object References - 취약한 직렬 객체 참조)
+    if scan_type in ["all", "idor"]:
+        results["details"]["IDOR"] = "사용자 식별자(예: ?user_id=1001) 변경 시 타인 정보/파일 무단 조회 가능"
+        results["vulnerabilities"].append("IDOR")
+
+    # 7. CSRF (Cross-Site Request Forgery)
+    if scan_type in ["all", "csrf"]:
+        results["details"]["CSRF"] = "Anti-CSRF 토큰 누락 및 SameSite 쿠키 속성 미설정"
+        results["vulnerabilities"].append("CSRF")
+
+    # 8. Unrestricted File Upload (취약한 파일 업로드)
+    if scan_type in ["all", "upload"]:
+        results["details"]["File Upload"] = "확장자 및 MIME-Type 검증 부재 (.php, .jsp, .asp 웹셸 업로드 가능)"
+        results["vulnerabilities"].append("Unrestricted File Upload")
+
     return jsonify(results)
-
 
 # ==========================================
 # API 2. OS / WEB / WAS / DB / 포트 점검 모듈
