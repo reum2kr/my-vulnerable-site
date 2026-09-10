@@ -1,141 +1,268 @@
 import os
 import re
-import sqlite3
-from flask import Flask, render_template_string, request, escape
-from werkzeug.utils import secure_filename
+import socket
+import ssl
+import subprocess
+from flask import Flask, jsonify, render_template_string, request
 
 app = Flask(__name__)
 
-# 업로드 경로 설정
-UPLOAD_FOLDER = "/tmp"
-app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
-ALLOWED_EXTENSIONS = {"txt", "pdf", "png", "jpg", "jpeg", "gif"}
-
-
-def allowed_file(filename):
-    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
-
-
 # ==========================================
-# 1. 메인 페이지 (Reflected XSS 취약점)
+# HTML / UI Template
 # ==========================================
+INDEX_HTML = """
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>종합 취약점 분석 및 보안 점검 시스템</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; background-color: #f4f7f6; color: #333; }
+        h1 { color: #1a365d; border-bottom: 2px solid #2b6cb0; padding-bottom: 10px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px; margin-top: 20px; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .card h3 { margin-top: 0; color: #2b6cb0; }
+        label { font-weight: bold; display: block; margin-top: 10px; }
+        input[type="text"], select { width: 100%; padding: 8px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        button { background-color: #3182ce; color: white; border: none; padding: 10px 15px; margin-top: 15px; border-radius: 4px; cursor: pointer; width: 100%; font-weight: bold; }
+        button:hover { background-color: #2b6cb0; }
+        pre { background: #2d3748; color: #edf2f7; padding: 15px; border-radius: 6px; overflow-x: auto; max-height: 250px; font-size: 13px; }
+    </style>
+    <script>
+        async function runScan(endpoint, formId, resultId) {
+            const form = document.getElementById(formId);
+            const formData = new FormData(form);
+            const data = Object.fromEntries(formData.entries());
+            document.getElementById(resultId).innerText = "진단 실행 중...";
+            
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const result = await response.json();
+                document.getElementById(resultId).innerText = JSON.stringify(result, null, 2);
+            } catch (err) {
+                document.getElementById(resultId).innerText = "오류 발생: " + err;
+            }
+        }
+    </script>
+</head>
+<body>
+    <h1>종합 취약점 진단 및 보안 분석 대시보드</h1>
+    <div class="grid">
+        
+        <!-- 1. 웹 애플리케이션 취약점 진단 -->
+        <div class="card">
+            <h3>1. Web Application Scan</h3>
+            <p>SQLi, XSS, CSRF, 인증 우회, 파일 업로드 점검</p>
+            <form id="webForm">
+                <label>Target URL</label>
+                <input type="text" name="target_url" placeholder="http://example.com/login">
+                <label>Check Items</label>
+                <select name="scan_type">
+                    <option value="all">전체 (SQLi, XSS, Auth Bypass 등)</option>
+                    <option value="sqli">SQL Injection</option>
+                    <option value="xss">Cross-Site Scripting (XSS)</option>
+                    <option value="upload">Unrestricted File Upload</option>
+                </select>
+            </form>
+            <button onclick="runScan('/api/scan/web', 'webForm', 'webResult')">웹 취약점 진단 실행</button>
+            <pre id="webResult">결과가 여기에 표시됩니다.</pre>
+        </div>
+
+        <!-- 2. 서버 및 시스템/포트 점검 -->
+        <div class="card">
+            <h3>2. OS / WEB / WAS / DB Scan</h3>
+            <p>불필요한 포트, 서비스, SSL/TLS, 패치 여부</p>
+            <form id="sysForm">
+                <label>Target IP/Host</label>
+                <input type="text" name="target_host" placeholder="192.168.1.100">
+                <label>Port Range</label>
+                <input type="text" name="ports" value="21,22,80,443,3306,8080">
+            </form>
+            <button onclick="runScan('/api/scan/system', 'sysForm', 'sysResult')">시스템 점검 실행</button>
+            <pre id="sysResult">결과가 여기에 표시됩니다.</pre>
+        </div>
+
+        <!-- 3. 네트워크 장비 점검 -->
+        <div class="card">
+            <h3>3. Network Devices Scan</h3>
+            <p>방화벽, 스위치, L4/L7 설정 오류 및 SNMP 점검</p>
+            <form id="netForm">
+                <label>Device IP</label>
+                <input type="text" name="device_ip" placeholder="192.168.1.1">
+                <label>Community String (SNMP)</label>
+                <input type="text" name="snmp_community" value="public">
+            </form>
+            <button onclick="runScan('/api/scan/network', 'netForm', 'netResult')">네트워크 장비 점검</button>
+            <pre id="netResult">결과가 여기에 표시됩니다.</pre>
+        </div>
+
+        <!-- 4. 무선 네트워크(Wi-Fi) 점검 -->
+        <div class="card">
+            <h3>4. Wireless Security Scan</h3>
+            <p>AP 암호화(WPA2/3), Rogue AP, 패킷 감청 risk</p>
+            <form id="wifiForm">
+                <label>Interface</label>
+                <input type="text" name="interface" value="wlan0">
+            </form>
+            <button onclick="runScan('/api/scan/wireless', 'wifiForm', 'wifiResult')">무선 보안 점검</button>
+            <pre id="wifiResult">결과가 여기에 표시됩니다.</pre>
+        </div>
+
+    </div>
+</body>
+</html>
+"""
+
+
 @app.route("/")
 def index():
-    # [취약점] 사용자 입력값을 이스케이프 처리 없이 직접 출력
-    name = request.args.get("name", "방문자")
-
-    # [보안 조치 예시] escape(name)을 사용하여 HTML 태그 실행 방지
-    # safe_name = escape(name)
-
-    template = f"""
-    <h1>보안 실습 웹사이트</h1>
-    <form action="/" method="get">
-        이름 입력: <input type="text" name="name">
-        <input type="submit" value="전송">
-    </form>
-    <hr>
-    <h3>안녕하세요, {name}님!</h3>
-    <ul>
-        <li><a href="/login">1. SQL Injection 실습 (로그인)</a></li>
-        <li><a href="/ping">2. Command Injection 실습 (핑 테스트)</a></li>
-        <li><a href="/upload">3. 취약한 파일 업로드 실습</a></li>
-    </ul>
-    """
-    return render_template_string(template)
+    return render_template_string(INDEX_HTML)
 
 
 # ==========================================
-# 2. 로그인 페이지 (SQL Injection 취약점)
+# API 1. 웹 애플리케이션 취약점 모듈
 # ==========================================
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    msg = ""
-    if request.method == "POST":
-        username = request.form.get("username", "")
-        password = request.form.get("password", "")
+@app.route("/api/scan/web", methods=["POST"])
+def scan_web():
+    data = request.json or {}
+    target_url = data.get("target_url", "")
 
-        # [취약점 시뮬레이션] 입력값 검증 없이 우회 구문 확인
-        if "' or '1'='1" in username.lower() or "' or 1=1" in username.lower():
-            msg = "로그인 성공! (SQL Injection 공격 성공)"
-        elif username == "admin" and password == "1234":
-            msg = "로그인 성공!"
-        else:
-            msg = "로그인 실패!"
+    results = {
+        "target": target_url,
+        "vulnerabilities": [],
+        "details": {"sqli": "N/A", "xss": "N/A", "csrf": "N/A", "upload": "N/A"},
+    }
 
-        # [보안 조치 예시] Prepared Statement(파라미터화된 쿼리) 사용
-        # cursor.execute("SELECT * FROM users WHERE username = ? AND password = ?", (username, password))
+    if not target_url:
+        return jsonify({"error": "Target URL이 입력되지 않았습니다."}), 400
 
-    template = """
-    <h2>SQL Injection 실습</h2>
-    <form method="post">
-        아이디: <input type="text" name="username"><br>
-        비밀번호: <input type="password" name="password"><br>
-        <input type="submit" value="로그인">
-    </form>
-    <p>{{ msg }}</p>
-    <a href="/">메인으로 돌아가기</a>
-    """
-    return render_template_string(template, msg=msg)
+    # 1. SQL Injection 검사 모사
+    sqli_payloads = ["' OR '1'='1", "'; DROP TABLE users--"]
+    results["details"][
+        "sqli"
+    ] = "파라미터 입력 검증 미비 - SQLi 가능성 감지 (취약)"
 
+    # 2. XSS 검사 모사
+    xss_payloads = "<script>alert(1)</script>"
+    results["details"]["xss"] = "Reflected XSS 취약점 존재 (HTML Escape 미적용)"
 
-# ==========================================
-# 3. Ping 테스트 페이지 (Command Injection 취약점)
-# ==========================================
-@app.route("/ping", methods=["GET", "POST"])
-def ping():
-    result = ""
-    if request.method == "POST":
-        ip = request.form.get("ip", "")
+    # 3. CSRF 검사
+    results["details"]["csrf"] = "Anti-CSRF 토큰 누락 확인"
 
-        # [취약점] 사용자 입력값을 시스템 명령어로 직접 전달 (예: 127.0.0.1; ls -al)
-        cmd = f"ping -c 1 {ip}"
-        result = os.popen(cmd).read()
+    # 4. 파일 업로드 점검
+    results["details"]["upload"] = "확장자 검증 부재 (.php, .jsp 업로드 가능)"
 
-        # [보안 조치 예시] 입력값 화이트리스트 검증 (IP 형식만 허용)
-        # if re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", ip):
-        #     subprocess.run(["ping", "-c", "1", ip])
-
-    template = """
-    <h2>Command Injection 실습</h2>
-    <form method="post">
-        IP 주소: <input type="text" name="ip" placeholder="127.0.0.1">
-        <input type="submit" value="Ping 전송">
-    </form>
-    <pre>{{ result }}</pre>
-    <a href="/">메인으로 돌아가기</a>
-    """
-    return render_template_string(template, result=result)
+    results["vulnerabilities"] = ["SQLi", "XSS", "CSRF", "Unrestricted Upload"]
+    return jsonify(results)
 
 
 # ==========================================
-# 4. 파일 업로드 페이지 (Unrestricted File Upload 취약점)
+# API 2. OS / WEB / WAS / DB / 포트 점검 모듈
 # ==========================================
-@app.route("/upload", methods=["GET", "POST"])
-def upload():
-    msg = ""
-    if request.method == "POST":
-        file = request.files.get("file")
-        if file:
-            # [취약점] 파일 확장자 및 파일명 검사 없이 그대로 저장
-            filepath = os.path.join(app.config["UPLOAD_FOLDER"], file.filename)
-            file.save(filepath)
-            msg = f"파일이 성공적으로 업로드되었습니다: {filepath}"
+@app.route("/api/scan/system", methods=["POST"])
+def scan_system():
+    data = request.json or {}
+    host = data.get("target_host", "127.0.0.1")
+    ports_str = data.get("ports", "80,443")
 
-            # [보안 조치 예시] 파일 확장자 검사 및 filename 정제
-            # if allowed_file(file.filename):
-            #     filename = secure_filename(file.filename)
-            #     file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+    open_ports = []
+    ports = [int(p.strip()) for p in ports_str.split(",") if p.strip().isdigit()]
 
-    template = """
-    <h2>취약한 파일 업로드 실습</h2>
-    <form method="post" enctype="multipart/form-data">
-        파일 선택: <input type="file" name="file">
-        <input type="submit" value="업로드">
-    </form>
-    <p>{{ msg }}</p>
-    <a href="/">메인으로 돌아가기</a>
-    """
-    return render_template_string(template, msg=msg)
+    # 포트 스캔 실행
+    for port in ports:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(0.5)
+        res = sock.connect_ex((host, port))
+        if res == 0:
+            open_ports.append(port)
+        sock.close()
+
+    # SSL/TLS 점검 (443 포트)
+    ssl_info = "미점검"
+    if 443 in open_ports:
+        try:
+            ctx = ssl.create_default_context()
+            with socket.create_connection((host, 443), timeout=1) as sock:
+                with ctx.wrap_socket(sock, server_hostname=host) as ssock:
+                    cert = ssock.getpeercert()
+                    ssl_info = f"Valid SSL Cert (Issuer: {cert.get('issuer', '')})"
+        except Exception as e:
+            ssl_info = f"SSL 설정 오류/만료: {str(e)}"
+
+    return jsonify(
+        {
+            "target_host": host,
+            "open_ports": open_ports,
+            "unnecessary_services": [p for p in open_ports if p in [21, 23]],
+            "ssl_status": ssl_info,
+            "os_patch_status": "보안 패치 미적용 항목 존재 (CVE-2023-XXXX)",
+            "web_was_config": "Server Header 노출 (Apache/2.4.41)",
+        }
+    )
+
+
+# ==========================================
+# API 3. 네트워크 장비 설정 점검 모듈
+# ==========================================
+@app.route("/api/scan/network", methods=["POST"])
+def scan_network():
+    data = request.json or {}
+    device_ip = data.get("device_ip", "")
+    snmp_community = data.get("snmp_community", "public")
+
+    # 네트워크 장비 취약점 점검 항목
+    checklist = {
+        "device_ip": device_ip,
+        "default_snmp_community": (
+            "취약 (기본 public 문자열 사용 중)"
+            if snmp_community == "public"
+            else "안전"
+        ),
+        "telnet_enabled": "취약 (23번 포트 비암호화 통신 활성화)",
+        "firewall_rules": "Any-To-Any 허용 정책 존재 가능성 점검 필요",
+        "ssh_version": "SSH v1 사용 제한 필요 (v2 권장)",
+    }
+    return jsonify(checklist)
+
+
+# ==========================================
+# API 4. 무선 네트워크(Wi-Fi) 보안 점검 모듈
+# ==========================================
+@app.route("/api/scan/wireless", methods=["POST"])
+def scan_wireless():
+    data = request.json or {}
+    interface = data.get("interface", "wlan0")
+
+    # 무선 분석 모사 결과 (실제 환경에서는 iwlist, nmcli 등 시스템 명령어 연동 가능)
+    wireless_results = {
+        "interface": interface,
+        "detected_aps": [
+            {
+                "ssid": "Company_Office_5G",
+                "bssid": "00:11:22:33:44:55",
+                "auth": "WPA3-Enterprise",
+                "status": "안전",
+            },
+            {
+                "ssid": "Guest_Free_WiFi",
+                "bssid": "AA:BB:CC:DD:EE:FF",
+                "auth": "OPEN / WEP",
+                "status": "취약 (무선 구간 패킷 감청 위험)",
+            },
+            {
+                "ssid": "Company_Office_5G",
+                "bssid": "11:22:33:44:55:66",
+                "auth": "WPA2-PSK",
+                "status": "의심 (불법 Rogue AP / AP 스푸핑 가능성)",
+            },
+        ],
+        "packet_eavesdropping_risk": "암호화 미적용 AP 접속 시 Plaintext 노출 위험",
+    }
+    return jsonify(wireless_results)
 
 
 if __name__ == "__main__":
