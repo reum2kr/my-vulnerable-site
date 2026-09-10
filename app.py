@@ -50,39 +50,39 @@ INDEX_HTML = """
     <script>
         let lastScanResult = null;
 
-        // 보안 조치 가이드 데이터
-        const defenseData = {
+        // 이론적 작동 원리 및 대응 방안 가이드
+        const analysisData = {
             "SQL Injection": {
-                "concept": "사용자 입력값이 SQL 쿼리 구조를 변조하여 무단 데이터 접근을 허용하는 취약점입니다.",
-                "solution": "Parameterized Query(PreparedStatement)를 사용하여 입력값을 단순 데이터 파라미터로 처리합니다."
+                "concept": "입력값 검증 미비로 인해 데이터베이스 Query 구조가 의도치 않게 변경되는 현상입니다.",
+                "solution": "Prepared Statement / Parameterized Query를 도입하여 데이터 요소를 인수로 분리합니다."
             },
             "XSS": {
-                "concept": "검증되지 않은 입력값이 웹 페이지에 출력되어 브라우저에서 스크립트가 실행되는 취약점입니다.",
-                "solution": "출력 시 HTML Entity Escape 처리를 적용하거나 CSP(Content Security Policy)를 설정합니다."
+                "concept": "외부 입력 데이터가 브라우저에 출력될 때 Script로 해석되어 실행되는 현상입니다.",
+                "solution": "입력값에 대한 HTML Escape 처리 및 Content Security Policy(CSP)를 적용합니다."
             },
             "Command Injection": {
-                "concept": "외부 입력값이 OS 시스템 명령어 실행 함수의 인자로 전달되어 발생하는 취약점입니다.",
-                "solution": "OS 명령어 직접 호출 함수 사용을 지양하고, 입력값에 대해 메타문자 필터링을 적용합니다."
+                "concept": "시스템 명령어 인자 전달 과정에서 제어문자가 실행 흐름을 변경하는 현상입니다.",
+                "solution": "시스템 직접 호출 명령을 제한하고 입력 파라미터의 허용 목록(White-list) 검증을 수행합니다."
             },
             "Directory Traversal": {
-                "concept": "상위 디렉터리 접근 문자열(../)을 이용하여 인가되지 않은 파일에 접근하는 취약점입니다.",
-                "solution": "입력값에서 ../ 경로 이동 문자열을 제거하거나 허용된 파일명/경로 목록(White-list)만 검증합니다."
+                "concept": "상위 경로 참조 문자열이 전달되어 디렉터리 범위를 벗어난 파일에 접근하는 현상입니다.",
+                "solution": "경로 이동 관련 특수문자를 제거하고 허용된 경로 내 파일만 접근할 수 있도록 제한합니다."
             },
             "Auth Bypass": {
-                "concept": "세션 및 쿠키 검증 미비로 인가 절차 없이 주요 페이지에 직접 접근할 수 있는 취약점입니다.",
-                "solution": "모든 보호된 엔드포인트에 세션 유효성 검증 서버 측 인터셉터/미들웨어를 적용합니다."
+                "concept": "인증 정보 검증 단계 누락으로 인해 권한 부여 없이 엔드포인트에 접근하는 현상입니다.",
+                "solution": "서버 측 세션 상태 유효성을 통일된 검증 미들웨어에서 처리하도록 구현합니다."
             },
             "IDOR": {
-                "concept": "요청 식별자(ID) 변경 시 타인의 자원에 무단 접근이 가능한 취약점입니다.",
-                "solution": "자원 접근 시 세션 정보의 로그인 사용자 ID와 요청 대상 자원의 소유권을 검증합니다."
+                "concept": "자원 식별자 변경 시 해당 자원에 대한 접근 권한을 제대로 검증하지 않는 현상입니다.",
+                "solution": "식별자 기반 요청 시 현재 로그인한 사용자의 소유 권한을 서버 측에서 추가 검증합니다."
             },
             "CSRF": {
-                "concept": "인증된 사용자의 브라우저를 통해 의도하지 않은 요청이 전송되는 취약점입니다.",
-                "solution": "요청 시 Anti-CSRF 토큰을 검증하고, Cookie에 SameSite=Strict/Lax 속성을 적용합니다."
+                "concept": "인증된 사용자의 브라우저 세션을 통해 의도하지 않은 상태 변경 요청이 전달되는 현상입니다.",
+                "solution": "요청 헤더 또는 폼에 고유한 Anti-CSRF 토큰 검증 로직을 도입합니다."
             },
             "Unrestricted File Upload": {
-                "concept": "실행 권한이 있는 확장자의 파일이 업로드되어 서버 권한이 침해되는 취약점입니다.",
-                "solution": "업로드 파일 확장자를 화이트리스트 방식으로 제한하고 실행 권한이 없는 디렉터리에 저장합니다."
+                "concept": "서버 측에서 실행 가능한 파일이 업로드되어 저장소 권한이 침해될 위험입니다.",
+                "solution": "업로드 확장자를 화이트리스트 형태로 제한하고 저장 경로의 실행 권한을 제거합니다."
             }
         };
 
@@ -105,15 +105,15 @@ INDEX_HTML = """
 
                 if (endpoint === '/api/scan/web') {
                     lastScanResult = result;
-                    document.getElementById('webGuideContent').innerText = "보안 조치 가이드 버튼을 누르면 상세 설명이 출력됩니다.";
+                    document.getElementById('webGuideContent').innerText = "취약점 개념 및 방어 원리 분석 버튼을 누르면 상세 설명이 출력됩니다.";
                 }
             } catch (err) {
                 document.getElementById(resultId).innerText = "오류 발생: " + err;
             }
         }
 
-        // 버튼 2: 진단 결과를 기반으로 시큐어 코딩 및 보안 조치 가이드 생성
-        function showRemediationGuide() {
+        // 버튼 2: 진단 결과를 기반으로 한 취약점 개념 및 방어 원리 분석 출력
+        function showAnalysisGuide() {
             const guideContainer = document.getElementById('webGuideContent');
             guideContainer.innerHTML = '';
 
@@ -123,7 +123,7 @@ INDEX_HTML = """
             }
 
             lastScanResult.vulnerabilities.forEach((vulnName, idx) => {
-                const itemData = defenseData[vulnName];
+                const itemData = analysisData[vulnName];
                 if (!itemData) return;
 
                 const itemDiv = document.createElement('div');
@@ -131,9 +131,9 @@ INDEX_HTML = """
 
                 itemDiv.innerHTML = `
                     <div class="vuln-title">${idx + 1}. ${vulnName}</div>
-                    <div class="guide-label">취약점 개요:</div>
+                    <div class="guide-label">발생 메커니즘:</div>
                     <div>${itemData.concept}</div>
-                    <div class="guide-label">보안 조치 방안:</div>
+                    <div class="guide-label">보안 구조 개선 방안:</div>
                     <div>${itemData.solution}</div>
                 `;
                 guideContainer.appendChild(itemDiv);
@@ -170,12 +170,12 @@ INDEX_HTML = """
             <button onclick="runScan('/api/scan/web', 'webForm', 'webResult')">웹 취약점 진단 실행</button>
             <pre id="webResult">결과가 여기에 표시됩니다.</pre>
 
-            <!-- 버튼 2: 보안 조치 가이드 분석 -->
-            <button class="sec-btn" onclick="showRemediationGuide()">시큐어 코딩 및 보안 조치 가이드</button>
+            <!-- 버튼 2: 원리 분석 및 보안 가이드 -->
+            <button class="sec-btn" onclick="showAnalysisGuide()">취약점 개념 및 방어 원리 분석</button>
             <div class="guide-box">
-                <h4>보안 조치 방안 (Remediation)</h4>
+                <h4>취약점 원리 및 대응 구조 분석</h4>
                 <div id="webGuideContent">
-                    진단 실행 후 아래 버튼을 누르면 항목별 조치 가이드가 표시됩니다.
+                    진단 실행 후 아래 버튼을 누르면 항목별 분석 정보가 표시됩니다.
                 </div>
             </div>
         </div>
@@ -249,42 +249,34 @@ def scan_web():
         "vulnerabilities": []
     }
 
-    # 1. SQL Injection (SQLi)
     if scan_type in ["all", "sqli"]:
         results["details"]["sqli"] = "파라미터 입력 검증 미비 - SQLi 가능성 감지 (취약)"
         results["vulnerabilities"].append("SQL Injection")
 
-    # 2. Cross-Site Scripting (XSS)
     if scan_type in ["all", "xss"]:
         results["details"]["xss"] = "Reflected XSS 취약점 존재 (HTML Escape 미적용)"
         results["vulnerabilities"].append("XSS")
 
-    # 3. Command Injection
     if scan_type in ["all", "cmdi"]:
         results["details"]["cmdi"] = "시스템 명령어 실행 파라미터 필터링 부재"
         results["vulnerabilities"].append("Command Injection")
 
-    # 4. Directory Traversal
     if scan_type in ["all", "traversal"]:
         results["details"]["traversal"] = "상위 디렉터리 접근 필터링 미비"
         results["vulnerabilities"].append("Directory Traversal")
 
-    # 5. 인증/권한 우회 (Auth Bypass)
     if scan_type in ["all", "auth_bypass"]:
         results["details"]["auth_bypass"] = "세션/쿠키 검증 로직 우회 가능성 존재"
         results["vulnerabilities"].append("Auth Bypass")
 
-    # 6. IDOR (취약한 객체 참조)
     if scan_type in ["all", "idor"]:
         results["details"]["idor"] = "사용자 식별자 변경 시 타인 정보 무단 조회 가능"
         results["vulnerabilities"].append("IDOR")
 
-    # 7. CSRF (크로스 사이트 요청 위조)
     if scan_type in ["all", "csrf"]:
         results["details"]["csrf"] = "Anti-CSRF 토큰 누락 확인"
         results["vulnerabilities"].append("CSRF")
 
-    # 8. Unrestricted File Upload
     if scan_type in ["all", "upload"]:
         results["details"]["upload"] = "확장자 검증 부재 (.php, .jsp 업로드 가능)"
         results["vulnerabilities"].append("Unrestricted File Upload")
